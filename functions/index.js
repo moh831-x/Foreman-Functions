@@ -1,4 +1,7 @@
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const {
+  onDocumentCreated,
+  onDocumentDeleted,
+} = require("firebase-functions/v2/firestore");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
@@ -31,15 +34,25 @@ async function sendToTokens(tokens, title, body) {
   });
 }
 
+// One-line summary of a shift, shared by the posted/removed notifications
+function shiftLine(shift) {
+  return `${shift.employeeName} — ${shift.day} ${shift.start}–${shift.end}`;
+}
+
 // Fires when a new shift is posted to the board
 exports.onShiftCreated = onDocumentCreated("shifts/{shiftId}", async (event) => {
   const shift = event.data.data();
   const tokens = await getTokens(shift.createdBy);
-  await sendToTokens(
-    tokens,
-    "New shift posted",
-    `${shift.employeeName} — ${shift.day} ${shift.start}–${shift.end}`
-  );
+  await sendToTokens(tokens, "New shift posted", shiftLine(shift));
+});
+
+// Fires when a shift is taken off the board. Firestore delete triggers don't
+// carry the acting user, so this goes out to the whole crew — including
+// whoever removed it.
+exports.onShiftDeleted = onDocumentDeleted("shifts/{shiftId}", async (event) => {
+  const shift = event.data.data();
+  const tokens = await getTokens();
+  await sendToTokens(tokens, "Shift removed", shiftLine(shift));
 });
 
 // Fires when a new to-do is added to the list
